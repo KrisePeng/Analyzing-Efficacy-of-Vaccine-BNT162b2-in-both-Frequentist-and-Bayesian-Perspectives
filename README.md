@@ -1,0 +1,1 @@
+# Analyzing-Efficacy-of-Vaccine-BNT162b2-in-both-Frequentist-and-Bayesian-Perspectives
