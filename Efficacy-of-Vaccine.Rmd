@@ -1,0 +1,1027 @@
+---
+title: "Analyzing Efficacy of Vaccine (BNT162b2) in both Frequentist and Bayesian Perspectives"
+author: "Ariel Xia, Yan Peng, Yuxin Jin, "
+date: March 16, 2025
+output: pdf_document
+urlcolor: blue
+header-includes:
+- \usepackage{amsmath,amsfonts,amssymb}
+- \usepackage{setspace} \doublespacing
+fontsize: 11pt
+---
+```{r setup, include=FALSE}
+library(knitr)
+library(ggplot2)
+library(LearnBayes)
+library(fastR2)
+library(dplyr)
+library(gridExtra)
+library(grid)
+```
+# Abstract
+This study evaluates the efficacy of the BNT162b2 COVID-19 vaccine using both Frequentist and Bayesian approaches. Analyzing Pfizer’s clinical trial data (8 infections in the vaccinated group vs. 162 in the placebo group), we estimate the vaccine efficacy parameter $\psi$. The Frequentist analysis, using maximum likelihood estimation, yields a 95% confidence interval of 91.56% to 98.57%, with p-values near zero, strongly supporting high efficacy. Meanwhile, Bayesian inference, conducted with three prior distributions, produces narrow credible intervals centered around 95%, with posterior probabilities near 1 supporting efficacy above the FDA-required 30% threshold. The agreement between Frequentist and Bayesian results highlights their complementary strengths in statistical inference. These findings emphasize the robustness of vaccine efficacy estimates and the benefits of integrating both approaches in clinical trials, contributing to improved public health decision-making.
+
+# Keywords
+*Vaccine*, *Covid-19*, *Bayesian Analysis*, *Frequentist Analysis*
+
+\newpage
+
+# Introduction / Background
+The COVID-19 pandemic has been a major public health crisis, leading to significant morbidity, mortality, and economic disruption. Pfizer and BioNTech conducted preclinical studies on BNT162b2 that showed promising immunogenicity and protection in animal models before moving to human trials (Pfizer, 2020). The development of vaccines has been crucial in controlling the virus, with BNT162b2 (Pfizer-BioNTech) being among the first to receive emergency use authorization in 2020 (Lamb, Y. N. 2021). This mRNA-based vaccine demonstrated 95% efficacy in large clinical trials (Sahin, U., et al. 2021). In Pfizer’s pivotal trial, over 43,000 participants were randomized to receive either the vaccine or a placebo, with only 8 infections in the vaccinated group compared to 162 in the placebo group, confirming strong protection ( Polack, F. P, 2020).
+Pfizer used a Bayesian statistical model to estimate vaccine efficacy, incorporating prior information for probabilistic interpretation. In contrast, Frequentist methods, which rely solely on observed data, are also widely used in clinical trials. The debate over these statistical approaches influences decision-making and public communication of trial results. This study reanalyzes Pfizer’s trial data using both Bayesian and Frequentist methods to examine how different statistical frameworks impact conclusions on vaccine efficacy, with broader implications for public health and policy.
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=5,label="Data Visualization",eval=TRUE,echo=FALSE}
+df <- data.frame(
+  Group = c("BNT162b2", "Placebo", "Total"),
+  Infected = c(8, 162, 170),
+  Uninfected = c(17403, 17349, 34752),
+  Sample_size = c(17411, 17511, 34922)
+)
+
+df_grob <- tableGrob(df, rows = NULL)
+df_grob_captioned <- arrangeGrob(
+  df_grob,
+  top = textGrob("Table 1.1: Vaccine Efficacy in Trials", gp = gpar(fontface = "bold"))
+)
+
+data <- data.frame(
+  Group = c("BNT162b2", "Placebo"),
+  InfectionRate = c(0.04595, 0.92513)
+)
+
+bar_plot <- ggplot(data, aes(x = Group, y = InfectionRate)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = scales::percent(InfectionRate, accuracy = 0.001)), vjust = -0.5) +
+  labs(
+    title = "Figure 1.1: Infection Rate by Group",
+    x = "Group",
+    y = "Infection Rate (%)"
+  ) +
+  theme_minimal()
+
+pie_data <- data
+pie_data$Percentage <- pie_data$InfectionRate / sum(pie_data$InfectionRate) * 100
+
+pie_chart <- ggplot(pie_data, aes(x = "", y = InfectionRate, fill = Group)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Figure 1.2: Infected Cases by Group") +
+  theme_void() +
+  theme(legend.position = "right")
+
+grid.arrange(
+  df_grob_captioned, 
+  bar_plot,         
+  pie_chart,      
+  ncol = 3,
+  widths = c(1.3, 1, 1)
+)
+```
+
+
+```{r label="summary", eval=TRUE, echo=FALSE}
+pi_b_hat <- 8 / 17411
+pi_p_hat <- 162 / 17511
+```
+From data provided by Pfizer in Table 1, we get $\hat{\pi}_v =$ `r pi_b_hat`, where $\hat{\pi}_v$ is the estimated probability that people who take the vaccine will be infected by COVID-19. 
+$\hat{\pi}_p =$ `r pi_p_hat`, where $\hat{\pi}_p$ is the estimated probability that people who didn't take the vaccine will be infected.
+
+Therefore, the vaccine efficacy is $\psi = \frac{\hat{\pi}_p - \hat{\pi}_v}{\hat{\pi}_p} \approx 0.95$, which means that the BNT162b2 vaccine reduces the risk of COVID-19 infection by about 95% relative to those who did not receive the vaccine. 
+```{r label="psi", eval=TRUE, echo=FALSE}
+psi <- (pi_p_hat - pi_b_hat) / pi_p_hat
+```
+
+# Statistical Methods
+
+## 1 Defining the Random Variables and Statistical Model
+We denote $T$ as the number of laboratory-confirmed COVID-19 cases
+in the vaccine (BNT162b2) group among the 170 infected cases. 
+We then employ two different approaches to analyze the data: a Bayesian
+approach and a likelihood-based (frequentist) approach. Each approach is
+detailed below.
+
+We assume $T \sim \mathrm{Binomial}(170, \pi)$, where $170$ is the total number of infected cases and $\pi$ is the unknown probability of using the vaccine given being infected, which equals to $\frac{\pi_v}{\pi_v + \pi_p}$. 
+
+Since $n_1 \approx n_2$ ($n_1 = 17411$, $n_2 = 17511$), we can represent the $\pi$ as $\pi = \frac{n_1\pi_v}{n_1\pi_v+n_2\pi_p} = \frac{\pi_v}{\pi_v+\pi_p}$
+
+From the data, we observe $t = 8$ vaccinated individuals among the infected cases. Our parameter of interest is vaccine efficacy, defined as $\psi = \frac{1 - 2\pi}{1 - \pi}$. We seek to construct an interval estimate for $\psi$ and test the hypothesis $H_0: \psi = 0.3$ versus $H_1: \psi > 0.3$.
+
+
+## 2 Likelihood Approach
+
+Since we have $T \sim \mathrm{Binom}(170, \pi_0)$, we could write $T_1, T_2, \ldots, T_{170} \stackrel{\mathrm{i.i.d.}}{\sim} \mathrm{Bernoulli}(\pi_0)$. 
+
+Given the parametrization from $\pi$ to $\psi$, we could infer $g(\psi)$, 
+$$\psi = \frac{1-2\pi}{1-\pi}\ \  \text{ (where } \ \ \pi = \frac{n_1\pi_v}{n_1\pi_v+n_2\pi_p})\Rightarrow \pi=\frac{\psi-1}{\psi-2} = g(\psi)$$
+Let $L^*(\psi)$ denote the likelihood function expressed in terms of the re-parametrization $\psi$. More precisely, $L^*(\psi)=L(g(\psi))$, so we write the expression for $L^*(\psi)$ as
+$$
+L^*(\psi) 
+= \binom{n}{t}\left(\frac{\psi - 1}{\psi - 2}\right)^{t}\left(1 \;-\; \frac{\psi - 1}{\psi - 2}\right)^{\,n - t}\\
+=\binom{n}{t}
+  (-1)^{n-t}\frac{(\psi - 1)^{t}}{(\psi - 2)^{n}}
+  \quad \text{where}\quad -\infty<\psi<1 \text{ and } 0 \leq t \leq n
+$$
+To find the MLE of $\psi$, consider t = 0. In this case we have
+$L^*(\psi) \propto \frac{(-1)^{n}}{(\psi - 2)^n} \quad \text{where}\quad -\infty<\psi<1$ which is an increasing function of $\psi$. Therefore, the MLE exists at the upper bound of $\psi$. However, since $\psi$ cannot be 1, we can't determine the MLE in this case.  
+
+In the case when $t = n$ we have
+$L^*(\psi) \propto (\frac{\psi - 1}{\psi - 2})^n \quad \text{where}\quad -\infty<\psi<1$ which is a decreasing function of $\psi$ given $-\infty<\psi<1$, so the MLE exists at $\psi = -\infty$, which is unbounded (does not exist).
+
+When $0<t<n$, the likelihood function of $\psi$  would be 
+$L^*(\psi) \propto (-1)^{n-t} \frac{(\psi - 1)^t}{(\psi - 2)^n} \quad \text{where}\quad -\infty<\psi<1$. Therefore we can use the technique of differentiation to find the maximizer. The log-likelihood in the reparametrized scale is $\ell^*(\psi) = \ln L^*(\psi) = t \ln (\psi - 1) - n \ln (\psi - 2) + C,$ where \( C \) is a constant that does not depend on \(\psi\).
+
+To find the MLE of $\psi$, we need to find the root of the following equation
+$\frac{d}{d\psi} \ell^*(\psi) = \frac{t}{\psi - 1} - \frac{n}{\psi - 2} = 0.$
+Thus, the maximum likelihood estimate (MLE) of \(\psi_0\) is (calculations in Proof 1.2):$\hat{\psi}_0^{mle} = \frac{2t - n}{t - n}.$
+
+To check the concavity at $\hat{\psi}_0^{mle}$, we substitute $\hat{\psi}_0^{mle}$ to the second derivative of the log-likelihood function, which is 
+$\frac{d^2}{d\psi^2} \ell^*(\hat{\psi}_0^{mle}) = \frac{n}{(\psi - 2)^2}-\frac{t}{(\psi - 1)^2} \\= \frac{(t-n)^3}{nt}$ which will be negative because $t < n$, meaning that $\hat{\psi}_0^{mle} = \frac{2t - n}{t - n}$ is a global maximum. 
+
+
+### 2.1 Confidence Interval for $\psi_0$
+#### 2.1.1 Large Sample Confidence Interval Estimate for $\psi_0$ \
+
+
+\textbf{Figure 2.1} Taylor Approximation to Log-likelihood
+```{r message=FALSE, warning=FALSE, fig.width=6, fig.height=4, out.width='50%',label="Taylor Log-likelihood plot", eval=TRUE, echo=FALSE}
+loglik.binom <- function(pi, x, n) {
+  ifelse(pi <= 0 | pi >= 1, NA, x * log(pi) + (n - x) * log(1 - pi))
+}
+
+ml.binom <- maxLik2(
+  loglik = loglik.binom,
+  start = 0.5,
+  x = 8,
+  n = 170
+)
+
+plot(ml.binom) +
+  labs(title = "Second order approximation to Bernoulli Log-Likelihood",
+       subtitle = "MLE and Quadratic Approximation for x=8, n=170",
+       x = expression(pi),
+       y = "Log-Likelihood") 
+```
+
+From Figure 2 we can tell that the second-order taylor approximation stays closely with the log-likelihood approximation of $\pi$, meaning that the sample size is large enough and the normal approximation is probably valid. Therefore, we could build the model
+$$
+\hat{\pi} \approx \mathrm{Normal}\bigl(\pi, \frac{1}{n\,I(\pi)}\bigr)
+= \mathrm{Normal}\bigl(\pi, \frac{\pi\,(1-\pi)}{n}\bigr)
+$$
+and we want to find a $100(1-\alpha)\%$ large sample confidence interval for $\psi_0$ using the formula $\hat{\psi}_0^{mle} \pm z_{\alpha/2} \hat{SE}$.
+
+Since $\hat{\pi}_0^{mle} = \frac{t}{n}$, the fisher information for $\pi$ is $\frac{n}{\pi(1-\pi)}$ (proof 1.5).
+
+Given that $\psi(\hat{\pi})$ is a smooth function, we have $\psi(\hat{\pi}) \approx \psi(\pi) + \psi^\prime(\pi)(\hat{\pi} - \pi)$. Hence, $\hat{\psi_0}$ is also approximately normal, with mean $\psi(\pi)$ and variance $[\psi^\prime(\pi)]^2 Var(\hat{\pi})$ (Proof 1.6). 
+
+Since the differentiation $\psi^\prime(\pi) = \frac{d}{d\pi}(\frac{1 - 2\pi}{1 - \pi}) = -\frac{1}{(1 - \pi)^2}$, we get $[\psi^\prime(\pi)]^2 = \frac{1}{(1 - \pi)^4}$. 
+
+Putting them together, we have 
+$$
+\mathrm{Var}(\hat{\psi_0}) \approx (\psi^\prime(\pi))^2 \mathrm{Var}(\hat{\pi})
+= \frac{1}{(1-\pi)^4} \frac{\pi(1-\pi)}{n}
+= \frac{\pi}{n(1-\pi)^3} \\
+\approx \frac{\hat{\pi}}{n(1-\hat{\pi})^3}
+= \frac{\frac{t}{n}}{n\bigl(1-\frac{t}{n}\bigr)^3}
+= \frac{tn}{(n-t)^3}
+$$
+Therefore, we have $SE(\psi_0) = \sqrt{\frac{tn}{(n - t)^3}}$. 
+Substituting $n = 170$ and $t = 8$ we get the 95% confidence interval.
+
+#### 2.1.2 Calculate a Bootstrap Percentile Interval for $\psi_0$\
+
+The 95% confidence interval for $\psi_0$ can be written as:$\left[ \psi_0^{(2.5\%)}, \psi_0^{(97.5\%)} \right]$, where \( \psi_0^{(p\%)} \) represents the \( p \)-th percentile of the bootstrap distribution.
+
+When using a parametric bootstrap to construct a percentile confidence interval for $\psi_0$, we first note that \(t = 8\) out of \(n = 170\) individuals in the infected group were vaccinated, giving an MLE for \(\pi\) as \(\hat{\pi} = t/n\).
+
+We then repeat the following steps \(B=1000\) times: (1) simulate a new count \(T^*\) from a \(\mathrm{Binomial}(n,\hat{\pi})\) distribution (so, 170 trials with probability \(\hat{\pi}\) of “success” each trial), (2) compute a bootstrap estimate \(\psi^*\) for efficacy via the same formula as the original \(\hat{\psi}_0 = \tfrac{n - 2T^*}{\,n - T^*}\). 
+
+After gathering these 1000 bootstrap replicates \(\psi^*\), we form a percentile confidence interval by taking the 2.5th and 97.5th percentiles of the sampled values. This approach approximates the sampling distribution of \(\hat{\psi}_0\) without relying on the delta‐method or other analytic formulas.
+
+### 2.2 Significance test for $\psi_0$
+
+We wish to test: $H_0: \psi_0=0.3 \quad H_1:\psi_0\neq0.3$
+
+#### 2.2.1 Chi-square Distribution P-Value\
+
+Likelihood ratio test is based on $W = 2 \ln\Lambda$ where $\Lambda = \frac{L(\hat{\pi_0^{mle}})}{L(\pi_0^{null})}$.
+
+When $H_0$ is true, $W \approx \chi_1^2$.
+
+Given $\pi =\frac{\psi-1}{\psi-2}$ and substituting $\psi = 0.3$ we could rewrite the hypotheses as $H_0: \pi_0=0.41 \quad H_1:\pi_0\neq0.41$.
+```{r label="pi_0", eval=TRUE, echo=FALSE}
+pi_0 <- (0.3-1)/(0.3-2)
+```
+
+We observed n = 170 Bernoulli trials (infected) with a total of t = 8 "successes" (vaccinated).
+
+For $T_1, T_2, \ldots, T_{170} \stackrel{\mathrm{i.i.d.}}{\sim} \mathrm{Bernoulli}(\pi_0)$, 
+$$
+L(\pi) = \pi^t(1-\pi)^{n-t} \text{,} \quad \hat{\pi_0}^{mle} = \frac{t}{n} = \frac{8}{170} = 0.05 \quad \Longrightarrow \quad \Lambda = \frac{0.05^8\times0.95^{162}}{0.41^8\times0.59^{162}} \text{,} \quad W = 2 \times \ln(\Lambda)
+$$
+Thus, p-value of this test would be $\text{P-value} = P(\chi_1^2 \geq W)$.
+
+#### 2.2.2 Empirical P-Value \
+
+In the empirical p‐value calculation, we start with \(n=170\) and an observed count of vaccinated individuals \(t_{\text{obs}}=8\), yielding a sample estimate \(\hat{\pi}=t_{\text{obs}}/n\). Under the null hypothesis that \(\psi_0=0.3\), we solve for \(\pi_0=(0.3-1)/(0.3-2)\approx0.41176\). We then compute the observed test statistic \(W_{\text{obs}}\) by comparing the log‐likelihood at \(\hat{\pi}\) to that at \(\pi_0\). Next, for each of B bootstrap iterations, we simulate a new count \(T^*\) from \(\mathrm{Binomial}(n,\pi_0)\), find the MLE \(\hat{\pi}^*=T^*/n\), and compute a “bootstrapped” statistic \(W^*\). Finally, the empirical p‐value is the fraction of these \(W^*\) values exceeding \(W_{\text{obs}}\), giving a data‐driven estimate of how unlikely our observed result would be if \(\psi\) truly were 0.3.
+
+## 3 Bayesian Approach 
+
+In the Bayesian approach, we need to specify a prior distribution, which we define as $g(\pi)$. $T |\pi \sim Binom(170, \pi), \quad g(\pi) = Beta(a, b)$ and the parameter of interest is $\psi = \frac{1-2\pi}{1-\pi}$. We will try three different prior elicitation: Beta(2.11,0.95), Beta(1,1) and Beta(0.700102,1). 
+
+### 3.1 Prior~Beta(2.11,0.95)——Informative Prior
+We use R to calculate a Beta(a,b) prior for $\pi$ where the median is $\frac{1}{2}$ and the 5th percentile is $\frac{7}{17}$
+
+To determine the appropriate prior, we use the `beta.select()` function from the LearnBayes package to match our specified quantile constraints (5% at $7/17$ and 50% at $0.5$). This results in the parameter estimates $a = 2.11$ and $b = 0.39$. We then visualize the Beta$(2.11, 0.39)$ prior by plotting its probability density function using the `ggplot()` function from the ggplot2 package.
+```{r label="priorquantile", eval=TRUE, echo=FALSE}
+params <-beta.select(
+  quantile1 = list(p = 0.05, x = 7/17),
+  quantile2 = list(p = 0.08, x = 0.5))
+```
+
+With the prior specified, we proceed to compute the posterior distribution. We assume a data model $T \sim \text{Binomial}(170, \pi)$ and a prior distribution $g(\pi) = \text{Beta}(2.11, 0.39)$. Applying Bayes' theorem, the resulting posterior distribution is given by $h(\pi \mid t) = \text{Beta}(2.11 + t, 170 - t + 0.39) = \text{Beta}(10.29, 162.39)$. We then visualize the prior $\text{Beta}(2.11, 0.39)$ and the posterior $\text{Beta}(2.11 + 8, 162 + 0.39)$ distributions using ggplot2.
+
+```{r fig.width=6, fig.height=4, out.width='50%',label="Beta(2.11,0.39)",eval=TRUE, echo=FALSE}
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 2.11, shape2 = 0.39),
+    mapping = aes(color = "prior")
+  ) +
+  labs(title = "Figure 3.1 Prior Distribution")
+
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 2.11, shape2 = 0.39),
+    mapping = aes(color = "prior")
+  ) +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 8 + 2.11, shape2 = 162 + 0.39),
+    mapping = aes(color = "posterior")
+  ) +
+  scale_color_manual(name = "dist", values = c("blue", "red")) +
+  labs(
+    title = "Figure 3.2 Prior and Posterior Distribution",
+    y = "PDF"
+  )
+
+```
+
+To better understand the posterior distribution and its inferences, we calculate the posterior median for $\psi$, estimate two intervals, and conduct a Bayesian hypothesis testing, which are specified in the following lines:  
+
+-Posterior Median for $\psi$:
+We compute the posterior median of \(\pi\)using the quantile function for the Beta distribution (`qbeta(0.5, shape1 =2.11+ 8, shape2= 162+ 0.39)`)
+Since $\psi = \frac{1-2\pi}{1-\pi} \Rightarrow \pi = \frac{1-\psi}{2-\psi}$, we have
+$$
+P\left(\frac{1-\psi}{2-\psi}< \pi\right) = 0.5 \Rightarrow P(1-\psi < \pi(2-\psi)|t) = 0.5 \\ 
+P(\psi > \frac{1-2\pi}{1-\pi}|t) = 0.5 
+$$
+Therefore, we get the posterior median of \(\psi\) by finding the $\psi$ that achieves $P(\psi > \frac{1-2\pi}{1-\pi}|t) = 0.5$.
+
+-Equal tail 95\% interval:
+We compute the equal-tail 95% credible interval for \(\pi\) (`qbeta(p =c(0.025,0.975), shape1=2.11+8,shape2 =162 + 0.39, lower.tail)`) and then transform it to obtain the interval for \(\psi\) based on $\pi=\frac{1-\psi}{2-\psi}$.
+
+-95\% HPDI:
+We calculate the 95% highest posterior density interval (HPDI) for \(\pi\) using the HDInterval package.
+We use `hdi(qbeta,credMass=0.95,shape1 =2.11 + 8,shape2=162 + 0.39)` and then transform it to obtain the interval for \(\psi\) based on $\pi=\frac{1-\psi}{2-\psi}$.
+
+-P-value:
+The null hypothesis for a Bayesian analysis is given by $H_0 : \psi = 0.3 \quad \text{versus} \quad H_1 : \psi > 0.3.$ We calculate the posterior probability $P(\psi \leq 0.3 \mid t)$ by identifying the corresponding statement about $\pi$, and compute that value as part of our Bayesian p\text{-}value calculation by $p(\pi\geq \frac{7}{17})$.
+
+
+### 3.2 Prior~Beta(1,1)-- Non-Informative Prior
+Firstly, we define the prior for \(\pi\) as \(\text{Beta}(1,1)\), which is equivalent to a uniform distribution on \([0,1]\). Then, we plot the Beta(1,1) prior using `ggplot()` from ggplot2.
+
+With the prior specified, we proceed to calculate the posterior distribution. We assume a data model $T \sim Binom(170,\pi)$ and a prior distribution $g(\pi) = Beta(1,1)$. Applying Bayes' theorem, the resulting posterior distribution is $h(\pi \mid t) = Beta\bigl(1 + t,\; 170 - t + 1\bigr)=Beta(9,163)$. We then plot the prior $Beta(1,1)$ and the posterior $Beta(9,163)$ distributions using ggplot2.
+
+
+```{r fig.width=6, fig.height=4, out.width='50%',label="Beta(1,1)",eval=TRUE, echo=FALSE}
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 1, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  labs(title = "Figure 3.3 Beta(1,1) prior for BNT162b2")
+
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 1, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 8 + 1, shape2 = 162 + 1),
+    mapping = aes(color = "posterior")
+  ) +
+  scale_color_manual(name = "dist", values = c("blue", "red")) +
+  labs(
+    title = "Figure 3.4 Beta(1,1) Prior and Posterior Distribution",
+    y = "PDF"
+  )
+
+```
+
+Following the methodology in 4.2, we will get the median, HPDI and P-value for $\psi$ with a Beta(1,1) prior.
+
+### 3.3 Beta(0.700102,1)--Pfizer's Prior
+Firstly, we define the prior for \(\pi\) as \(\text{Beta}(0.70012,1)\), which represents an informative prior on \([0,1]\).
+Then, we plot the Beta(0.70012,1) prior using ggplot2 to visualize its probability density function:
+
+
+
+With the prior specified, we proceed to calculate the posterior distribution.We assume a data model $T \sim Binom(170,\pi)$ and a prior $g(\pi) = Beta(0.700102, 1)$ Applying Bayes' theorem, the resulting posterior distribution is is $h(\pi \mid t) = Beta\bigl(0.700102 + t,\; 170 - t + 1\bigr)=Beta(8.700102,163)$. We then plot the prior (Beta(0.700102,1)) and posterior (Beta(8.700102, 163)) distributions using ggplot2.
+
+```{r fig.width=6, fig.height=4, out.width='50%',label="Beta(0.700102,1)",eval=TRUE, echo=FALSE}
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 0.700102, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  labs(title = "Figure 3.5 Beta(0.700102,1) prior for BNT162b2")
+
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 0.700102, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 8 + 0.700102, shape2 = 162 + 1),
+    mapping = aes(color = "posterior")
+  ) +
+  scale_color_manual(name = "dist", values = c("blue", "red")) +
+  labs(
+    title = "Figure 3.6 Prior and Posterior Distrbution (Beta(0.700102,1))",
+    y = "PDF"
+  )
+
+```
+
+Following the methodology in 4.2, we will get the median, HPDI and P-value for $\psi$ with a Beta(0.700102,1) prior.
+
+# Results
+
+## 1 Likelihood Analysis Result
+
+In likelihood inference, we first found $\hat{\psi}_0^{mle}$: 
+$\hat{\psi}_0^{mle} = \frac{2t - n}{t - n}.$
+
+Then, we calculated the large-sample confidence interval estimate for $\psi_0$ after checking the regularity conditions from a log-likelihood function graph that is well-approximated by a second order Taylor series around the MLE. We got a large sample 95% confidence interval:
+```{r label="CI for psi", eval=TRUE, echo=FALSE}
+t <- 8
+n <- 170
+
+mle_psi <- (2*t-n)/(t-n)
+SE_psi <- sqrt((t*n)/(n-t)^3)
+lower <- mle_psi - 1.96*SE_psi
+upper <- mle_psi + 1.96*SE_psi
+```
+
+$95\% CI = (0.9156, 0.9857)$
+We also calculated the 95% simple bootstrap percentile interval for $\psi_0$ using r code simulation:
+$95\% CI_{bootstrap} = (0.9103, 0.9820)$.
+```{r label="bootstrap percentile CI for psi_0", eval=TRUE, echo=FALSE}
+set.seed(12345)
+
+n <- 170
+t <- 8
+pi_hat <- t / n
+psi0_hat <- (n - 2 * t) / (n - t)
+B <- 1000
+
+boot_psi <- replicate(B, {
+  t_star <- rbinom(1, size = n, prob = pi_hat)
+  psi_star <- (n - 2 * t_star) / (n - t_star)
+  psi_star
+})
+
+bootstrap_CI <- quantile(boot_psi, probs = c(0.025, 0.975))
+```
+
+\textbf{Figure 2.2} Bootstrapped Sampling Distribution of $\hat{\psi_0}$
+```{r fig.width=6, fig.height=4, out.width='50%',label="Bootstrapped Sampling Distribution of hat psi_0", eval=TRUE, echo=FALSE}
+boot_df <- data.frame(psi_star = boot_psi)
+ggplot(boot_df, aes(x = psi_star)) +
+  geom_histogram(binwidth = 0.005, fill = "skyblue", color = "black") +
+  geom_vline(xintercept = psi0_hat, color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = expression("Bootstrapped Sampling Distribution of " ~ hat(psi)[0]),
+       x = expression(hat(psi)[0]),
+       y = "Frequency") +
+  theme_minimal()
+```
+
+The parametric bootstrap percentile interval for $\psi_0$ and the large sample confidence interval estimate for $\psi_0$ are very close to each other (bootstrap CI: `r round(bootstrap_CI, 4)`, Large-sample CI: `r round(lower, 4)` `r round(upper, 4)`). This suggests that the large-sample assumptions are working well in this case. In other words, the sample size is large enough and the estimator's distribution is close to normal. From Figure 2.2, we can tell that the distribution is approximately symmetric around 0.95, suggesting that a normal-based approximation is reasonable in this case. 
+
+Since testing is the other form of inference, we also conducted the following test on the two hypotheses: $H_0: \psi_0=0.3, \quad H_1:\psi_0\neq0.3$
+
+We first found the p-value using the chi-square distribution, which would be $2.970014e-28$
+```{r label="LRT P-value", eval=TRUE, echo=FALSE}
+LRT_pval <- pchisq(121.5, df = 1, lower.tail = FALSE)
+```
+With this p-value that is near 0, we reject the null hypothesis, meaning that the observed data provide overwhelming evidence that the true vaccine efficacy is much higher than 30%. Consequently, the therapy would meet the FDA's requirement for at least 30% efficacy. Then, we applied simulation to find the empirical p-value, and we found the empirical p-value to be 0. 
+
+```{r label="Empirical P-value setup", eval=TRUE, echo=FALSE}
+set.seed(414)
+B <- 1500
+n <- 170
+t_obs <- 8
+
+psi0 <- 0.3
+pi0  <- (psi0 - 1) / (psi0 - 2)
+
+pi_hat <- t_obs / n
+
+loglik.binom <- function(p, t, n) {
+  if (p <= 0 || p >= 1) {
+    return(-Inf)
+  }
+  t * log(p) + (n - t) * log(1 - p)
+}
+
+obs_loglik_mle <- loglik.binom(pi_hat, t_obs, n)
+obs_loglik_null <- loglik.binom(pi0, t_obs, n)
+
+obs_W <- 2 * (obs_loglik_mle - obs_loglik_null)
+
+sim_func <- function() {
+  t_star <- rbinom(1, size = n, prob = pi0)
+  pi_star <- t_star / n
+  
+  loglik_mle_star  <- loglik.binom(pi_star, t_star, n)
+  loglik_null_star <- loglik.binom(pi0,     t_star, n)
+  W_star <- 2 * (loglik_mle_star - loglik_null_star)
+  
+  return(W_star)
+}
+
+null_sim <- lapply(seq_len(B), function(b) sim_func())
+null_sim <- unlist(null_sim)
+
+emp_p_value <- mean(null_sim >= obs_W)
+```
+
+\textbf{Figure 2.3} Parametric Bootstrap Distribution of $W^*$
+```{r fig.width=6, fig.height=4, out.width='50%',label="Parametric Bootstrap Distribution of W", eval=TRUE, echo=FALSE}
+ggplot(mapping = aes(x = null_sim)) +
+  geom_histogram(binwidth = 2, color = "black", fill = "blue") +
+  geom_vline(xintercept = obs_W, color = "red", linetype = "dashed") +
+  labs(
+    title = "Parametric Bootstrap Distribution of W*",
+    subtitle = paste("H0: psi0 =", psi0, "-> pi0 =", round(pi0,5),
+                     "| Observed W =", round(obs_W,2)),
+    x = expression(W^"*"),
+    y = "Frequency"
+  ) +
+  theme_minimal()
+```
+
+It seems like the observed $W$ is even higher than the W that we got from the test on $\psi_0$ using the chi-square distribution, meaning that under the null hypothesis, it is extremely unlikely to see a test statistic anywhere near the one actually observed in the data. Figure 2.3 also demonstrates a huge deviation of the observed W and the W under null hypothesis. Consequently, the empirical p-value is essentially 0, meaning that we have evidence to reject $H_0$. 
+
+## 2 Bayesian Analysis Result
+### 2.1 Prior~Beta(2.11,0.95)——Informative Prior
+
+Given what we've gotten with Prior distribution$\sim$Beta(2.11,0.95) and Posterior Elicitation $\pi|t\sim$Beta(10.11,162.39):
+
+According to Figure 3.1, the prior distribution is a skeptical one, theorizing that the vaccine will have minimal effect and that the rate of infection among the vaccinated group could be comparable to that in the placebo group. According Figure3.2, the posterior distribution shifts dramatically to a sharp spike at almost exactly zero, showing strong evidence of substantial vaccine-induced protection. The sharp contrast shows how compelling data can turn initial skepticism on its head and reveals strong evidence for the effectiveness of the vaccine.
+
+\textbf{Summarize the posterior elicitation of \(\pi \& \psi \):}
+-posterior Median for $\psi$ by qbeta: We transform the posterior median we got $\pi = 0.0569$ to $\psi$, and get:
+$P\left(\frac{1-\psi}{2-\psi}< 0.0569\right)\Rightarrow P(\psi > 0.9397|t) = 0.5$ . Thus, The posterior median of $\psi=0.9397$.
+```{r label="PosteriorMedia1", eval=TRUE, echo=FALSE}
+posterior_median_pi_2.11 <- qbeta(0.5,shape1 =2.11+ 8,shape2= 162+ 0.39 )
+```
+
+-Equal tail 95\% interval:
+After transforming the interval we get for $\pi$, which is [0.02876, 0.0981], we get $0.0288 < \frac{1-\psi}{2-\psi} < 0.0981 \Rightarrow 0.89123 <\psi <0.97094$. Thus, the 95% equal tail interval for $\psi$ is about [0.8912, 0.9709].
+```{r label="PosteriorEqualTailInterval1", eval=TRUE, echo=FALSE }
+eqtail_interval_2.11<-qbeta(p =c(0.025,0.975),shape1=2.11+8,shape2 =162 + 0.39)
+```
+
+-95\% HPDI: For $\pi$, 95%HPDI is about [0.0261,0.09413] calculated by hdi function.
+We then transform it by $0.0261 < \frac{1-\psi}{2-\psi} < 0.09413 \Rightarrow 0.8961 <\psi <0.9732$ and get the 95% tail interval of $\psi$ is about [0.8961, 0.9732].
+
+The 95% equal‐tail interval for \(pi\) is [0.0288,0.0981], whereas the 95% HPDI is
+[0.02610,0.09413], making the HPDI slightly tighter and starting at a lower bound. This shows the HPDI encompasses the most probable region of the posterior and the equal‐tail interval places equal mass below and above the interval. In either case, the intervals are below 0.10, indicating low probability of infection in the vaccinated and highlighting the effectiveness of the vaccine.
+```{r label="PosteriorHPDI1", eval=TRUE, echo=FALSE}
+library(HDInterval)
+hpd_interval_2.11<-hdi(qbeta,credMass=0.95,shape1 =2.11 + 8,
+shape2=162 + 0.39)
+```
+
+-Calculate a Bayesian P-value: Using the transformation, the result is extremely close to 0. Since $P(\pi \geq 0.4118|t)= 4.942174e-27 \approx 0$, which is equivalent to $P(\psi \leq 0.3|t)\approx 0$, this provides strong evidence against $H_0:\psi \leq 0.3$ and supports the alternative $H_1:\psi >0.3$.The posterior probability of this event is extremely small, showing overwhelming evidence that the vaccine efficacy is well above 30\%.
+```{r label="P-value1", eval=TRUE, echo=FALSE}
+posterior_10.11<-pbeta(q=7/17,shape1=2.11+8,shape2 =162 + 0.39,lower.tail = FALSE)
+```
+
+### 2.2 Prior~Beta(1,1)——Non-Infromative Prior
+
+According to Figure 3.3, the prior distribution (shown in red) is flat, indicating that there are no initial assumptions about the vaccine’s effectiveness. However, according to Figure3.4,after analyzing the data, the posterior distribution (shown in blue) shifts sharply toward zero, providing strong evidence that the infection rate among vaccinated individuals is very low. This suggests that the vaccine is highly effective. The plot clearly demonstrates how new data can significantly refine our understanding, even when starting with no prior knowledge.
+
+\textbf{Summarize the posterior distribution of \(\pi \& \psi \):}
+-posterior Median for $\psi$:
+We found the posterior median for $\pi$ to be 0.0506. Then, we transform and get:
+$P\left(\frac{1-\psi}{2-\psi}< 0.0506\right) = 0.5 \Rightarrow P(\psi > 0.9467|t) = 0.5$. Therefore, the posterior median of $\psi=0.9467$.
+```{r label="PosteriorMedian2", eval=TRUE, echo=FALSE}
+posterior_median_pi <- qbeta(0.5, shape1 = 9, shape2 = 163)
+```
+
+-Equal tail 95\% interval: After transforming the interval we get for $\pi$, which is [0.0243, 0.0901], we get $0.0243585 < \frac{1-\psi}{2-\psi} < 0.09009896 \Rightarrow 0.90097 <\psi <0.97503$. Thus, the 95% equal tail interval for $\psi$ is about [0.9010,0.9750].
+```{r label="PosteriorEqualTailInterval2", eval=TRUE, echo=FALSE}
+eqtail_interval_1 <- qbeta(c(0.025, 0.975), shape1 = 9, shape2 = 163)
+```
+
+-95\% HPDI: For $\pi$, 95% HPDI is about [0.0217,0.0860] calculated by hdi function.
+We then transform and get:$0.02169877 < \frac{1-\psi}{2-\psi} < 0.08603360 \Rightarrow 0.90586 <\psi <0.97781$.For $\psi$, 95% HPDI is about [0.9059,0.9778].
+The 95% equal‐tail interval for \(\pi\) is around [0.0243,0.0901], while the 95% HPDI is [0.0217,0.0860]. The HPDI narrows slightly, enclosing the most likely region of the posterior in a tighter interval. Both intervals are below 0.10, supporting the conclusion that the probability of the vaccine causing an infection is likely low and its effectiveness high.
+```{r label="PosteriorHPDI2", eval=TRUE, echo=FALSE}
+library(HDInterval)
+hpd_interval_1 <- hdi(qbeta, credMass = 0.95, shape1 = 9, shape2 = 163)
+```
+
+-Calculate a Bayesian P-value: According to the transformation, we can calculate the posterior probability $P(\psi \leq 0.3 \mid t)$ by calculating $P(\pi \geq \frac{7}{17})$:The posterior probability of this event is 3.726932e-28 $\approx 0$extremely small, showing overwhelming evidence that the vaccine efficacy is well above 30%.
+```{r label="P-value2", eval=TRUE, echo=FALSE}
+posterior_9<-pbeta(q=7/17,shape1=1+8,shape2 =162 + 1,lower.tail = FALSE)
+```
+
+### 2.3 Prior~Beta(0.700102,1)——Pfizer's Prior
+According to 3.5,the Beta(0.700102,1) prior is placing slightly higher probability on lower efficacy values but still offers a wide range of possible outcomes.  After observing the data,according to figure 3.6, because our prior was so strong, our estimate didn't shift much. This illustrates how powerful priors can restrict the effect of data on our reasoning.
+
+\textbf{Summarize the posterior distribution of \(\pi \& \psi \):}
+-posterior Median for $\pi$ by qbeta:
+We found the posterior median for $\pi$ to be 0.0489. Then, we transform and get:
+$P\left(\frac{1-\psi}{2-\psi}< 0.0489\right) = 0.5 \Rightarrow P(\psi > 0.9486|t) = 0.5$. Therefore, the posterior median of $\psi=0.9486$.
+```{r label="PosteriorMedian3", eval=TRUE, echo=FALSE}
+posterior_median_pi_0.700102 <- qbeta(0.5, shape1 = 8.700102, shape2 = 163)
+```
+
+-Equal tail 95\% interval:
+After transforming the interval we get for $\pi$, which is [0.0232, 0.0880], we get $0.02319402 < \frac{1-\psi}{2-\psi} <0.08799074 \Rightarrow 0.90351 < \psi < 0.97625$. Thus, the 95% equal tail interval for $\psi$ is about [0.9035,0.9763].
+```{r label="PosteriorEqualTailInterval3", eval=TRUE, echo=FALSE}
+eqtail_interval_0.700102 <- qbeta(c(0.025, 0.975), shape1 = 8.700102, shape2 = 163)
+```
+
+```{r label="PosteriorHPDI3", eval=TRUE, echo=FALSE}
+library(HDInterval)
+hpd_interval_0.700102 <- hdi(qbeta, credMass = 0.95, shape1 = 8.700102, shape2 = 163)
+```
+-95\% HPDI:
+For $\pi$, 95% HPDI is about [0.0206,0.0839].
+We then transform $0.02055233 < \frac{1-\psi}{2-\psi} <0.08389419 \Rightarrow 0.90842 < \psi <0.97901$ and get the result that 95% HPDI of $\psi$ is about [0.9084,0.9790].
+
+The 95% equal‐tail interval for \(\pi\) is around [0.02319,0.08799], while the 95% HPDI is[0.02055,0.08389]. The HPDI is slightly tighter and captures the densest portion of the posterior distribution. Both intervals are less than 0.10 and suggest very low and favorable probability of infection in the vaccinated population and in favor of high vaccine efficacy.
+
+```{r label="P-value3", eval=TRUE, echo=FALSE}
+posterior_8.700102<-pbeta(q=7/17,shape1=0.70012+8,shape2 =162 + 1, lower.tail = FALSE)
+```
+-Calculate a Bayesian P-value:
+The Bayesian P-value $P(\psi \leq 0.3|t) =$`r posterior_8.700102`$\approx 0$ is extremely small, providing strong posterior evidence that vaccine efficacy exceeds 30%. Under the assumed prior and observed data, it is highly unlikely for the vaccine's efficacy to be at or below 30%, supporting high efficacy.
+
+# Discussion / Conclusion
+Our analysis demonstrates that both Frequentist and Bayesian approaches converge on a robust conclusion: the BNT162b2 vaccine provides approximately 95% protection against COVID-19. Frequentist confidence intervals, obtained via large-sample theory and bootstrap methods, range from roughly 0.91 to 0.98. Similarly, Bayesian credible intervals—whether derived from informative, non-informative, or Pfizer’s priors—fall in a comparable range (approximately 0.89 to 0.98).
+
+The Frequentist framework offers a clear, data-driven interpretation through p-values and confidence intervals under repeated sampling assumptions. Its strength lies in its objectivity and well-established hypothesis testing; however, it can be limited by its reliance on asymptotic properties, which may not hold in smaller samples or more complex models. In contrast, the Bayesian approach updates prior beliefs with observed data, yielding intuitive posterior probabilities and greater flexibility in incorporating prior knowledge. Yet, its dependence on prior specification can be a drawback when subjective priors influence the results.
+
+Both methods conclusively reject the null hypothesis of low vaccine efficacy. The Frequentist method’s straightforward testing is complemented by the Bayesian framework’s probabilistic interpretation that quantifies the likelihood of exceeding regulatory efficacy thresholds.
+
+In summary, despite their inherent differences—Frequentist methods being more rigid and data-centric, and Bayesian methods offering richer inferential insights—their convergence reinforces the conclusion of high vaccine efficacy. This duality strengthens our findings and underscores the value of integrating multiple statistical perspectives for informed public health decision-making.
+
+
+# Bibliography
+
+Pfizer Inc. (2020). Pfizer and BioNTech announce data from preclinical studies of mRNA-based COVID-19 vaccine candidate. Retrieved from https://www.pfizer.com/news/press-release/press-release-detail/pfizer-and-biontech-announce-data-preclinical-studies-mrna  
+
+Polack, F. P., Thomas, S. J., Kitchin, N., Absalon, J., Gurtman, A., Lockhart, S., Perez, J. L., et al. (2020). Safety and Efficacy of the BNT162b2 mRNA Covid-19 Vaccine. Retrieved from https://www.nejm.org/doi/full/10.1056/nejmoa2034577.
+
+Lamb, Y. N. (2021). BNT162b2 mRNA COVID-19 Vaccine: First Approval. Retrieved from https://pubmed.ncbi.nlm.nih.gov/33683637/
+
+Sahin, U., Muik, A., Vogler, I., et al. (2021). BNT162b2 vaccine induces neutralizing antibodies and poly-specific T cells in humans. Retrieved from https://www.nature.com/articles/s41586-021-03653-6.
+ 
+
+# Appendix
+
+## Code
+## Introduction
+```{r message=FALSE, warning=FALSE, fig.width=10, fig.height=5, ref.label="Data Visualization", eval=FALSE}
+df <- data.frame(
+  Group = c("BNT162b2", "Placebo", "Total"),
+  Infected = c(8, 162, 170),
+  Uninfected = c(17403, 17349, 34752),
+  Sample_size = c(17411, 17511, 34922)
+)
+
+df_grob <- tableGrob(df, rows = NULL)
+df_grob_captioned <- arrangeGrob(
+  df_grob,
+  top = textGrob("Table 1.1: Vaccine Efficacy in Trials", gp = gpar(fontface = "bold"))
+)
+
+data <- data.frame(
+  Group = c("BNT162b2", "Placebo"),
+  InfectionRate = c(0.04595, 0.92513)
+)
+
+bar_plot <- ggplot(data, aes(x = Group, y = InfectionRate)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = scales::percent(InfectionRate, accuracy = 0.001)), vjust = -0.5) +
+  labs(
+    title = "Figure 1.1: Infection Rate by Group",
+    x = "Group",
+    y = "Infection Rate (%)"
+  ) +
+  theme_minimal()
+
+pie_data <- data
+pie_data$Percentage <- pie_data$InfectionRate / sum(pie_data$InfectionRate) * 100
+
+pie_chart <- ggplot(pie_data, aes(x = "", y = InfectionRate, fill = Group)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Figure 1.2: Infected Cases by Group") +
+  theme_void() +
+  theme(legend.position = "right")
+
+grid.arrange(
+  df_grob_captioned, 
+  bar_plot,         
+  pie_chart,      
+  ncol = 3,
+  widths = c(1.3, 1, 1)
+)
+```
+
+```{r ref.label="summary", eval=FALSE}
+pi_b_hat <- 8 / 17411
+pi_p_hat <- 162 / 17511
+```
+
+```{r ref.label="psi", eval=FALSE}
+psi <- (pi_p_hat - pi_b_hat) / pi_p_hat
+```
+
+## Method
+### Likelihood Inference
+```{r ref.label="Taylor Log-likelihood plot", eval=FALSE}
+loglik.binom <- function(pi, x, n) {
+  ifelse(pi <= 0 | pi >= 1, NA, x * log(pi) + (n - x) * log(1 - pi))
+}
+
+ml.binom <- maxLik2(
+  loglik = loglik.binom,
+  start = 0.5,
+  x = 8,
+  n = 170
+)
+
+plot(ml.binom) +
+  labs(title = "Second order approximation to Bernoulli Log-Likelihood",
+       subtitle = "MLE and Quadratic Approximation for x=8, n=170",
+       x = expression(pi),
+       y = "Log-Likelihood") 
+```
+
+```{r ref.label="CI for psi", eval=FALSE}
+t <- 8
+n <- 170
+
+mle_psi <- (2*t-n)/(t-n)
+SE_psi <- sqrt((t*n)/(n-t)^3)
+lower <- mle_psi - 1.96*SE_psi
+upper <- mle_psi + 1.96*SE_psi
+```
+
+```{r ref.label="bootstrap percentile CI for psi_0",eval=FALSE}
+set.seed(12345)
+
+n <- 170
+t <- 8
+pi_hat <- t / n
+psi0_hat <- (n - 2 * t) / (n - t)
+B <- 1000
+
+boot_psi <- replicate(B, {
+  t_star <- rbinom(1, size = n, prob = pi_hat)
+  psi_star <- (n - 2 * t_star) / (n - t_star)
+  psi_star
+})
+
+bootstrap_CI <- quantile(boot_psi, probs = c(0.025, 0.975))
+```
+
+```{r ref.label="Bootstrapped Sampling Distribution of hat psi_0", eval=FALSE}
+boot_df <- data.frame(psi_star = boot_psi)
+ggplot(boot_df, aes(x = psi_star)) +
+  geom_histogram(binwidth = 0.005, fill = "skyblue", color = "black") +
+  geom_vline(xintercept = psi0_hat, color = "red", linetype = "dashed", linewidth = 1) +
+  labs(title = expression("Bootstrapped Sampling Distribution of " ~ hat(psi)[0]),
+       x = expression(hat(psi)[0]),
+       y = "Frequency") +
+  theme_minimal()
+```
+
+```{r ref.label="pi_0", eval=FALSE}
+pi_0 <- (0.3-1)/(0.3-2)
+```
+
+```{r ref.label="pi_hat_mle", eval=FALSE}
+pi_hat_mle <- 8/170
+```
+
+```{r ref.label="lambda", eval=FALSE}
+Lambda <- (0.05^8 * 0.95^162) / (0.41^8 * 0.59^162)
+```
+
+```{r ref.label="W", eval=FALSE}
+W <- 2 * log(Lambda)
+```
+
+
+```{r ref.label="LRT P-value", eval=FALSE}
+LRT_pval <- pchisq(121.5, df = 1, lower.tail = FALSE)
+```
+
+```{r ref.label="Empirical P-value", eval=FALSE}
+set.seed(414)
+B <- 1500
+n <- 170
+t_obs <- 8
+
+psi0 <- 0.3
+pi0  <- (psi0 - 1) / (psi0 - 2)
+
+pi_hat <- t_obs / n
+
+loglik.binom <- function(p, t, n) {
+  if (p <= 0 || p >= 1) {
+    return(-Inf)
+  }
+  t * log(p) + (n - t) * log(1 - p)
+}
+
+obs_loglik_mle <- loglik.binom(pi_hat, t_obs, n)
+obs_loglik_null <- loglik.binom(pi0, t_obs, n)
+
+obs_W <- 2 * (obs_loglik_mle - obs_loglik_null)
+
+sim_func <- function() {
+  t_star <- rbinom(1, size = n, prob = pi0)
+  pi_star <- t_star / n
+  
+  loglik_mle_star  <- loglik.binom(pi_star, t_star, n)
+  loglik_null_star <- loglik.binom(pi0,     t_star, n)
+  W_star <- 2 * (loglik_mle_star - loglik_null_star)
+  
+  return(W_star)
+}
+
+null_sim <- lapply(seq_len(B), function(b) sim_func())
+null_sim <- unlist(null_sim)
+
+emp_p_value <- mean(null_sim >= obs_W)
+```
+
+```{r ref.label="Parametric Bootstrap Distribution of W", eval=FALSE}
+ggplot(mapping = aes(x = null_sim)) +
+  geom_histogram(binwidth = 2, color = "black", fill = "blue") +
+  geom_vline(xintercept = obs_W, color = "red", linetype = "dashed") +
+  labs(
+    title = "Parametric Bootstrap Distribution of W*",
+    subtitle = paste("H0: psi0 =", psi0, "-> pi0 =", round(pi0,5),
+                     "| Observed W =", round(obs_W,2)),
+    x = expression(W^"*"),
+    y = "Frequency"
+  ) +
+  theme_minimal()
+```
+
+### Bayesian 
+-Beta(2.11,0.39)
+```{r ref.label="priorquantile", eval=FALSE}
+params <-beta.select(
+  quantile1 = list(p = 0.05, x = 7/17),
+  quantile2 = list(p = 0.08, x = 0.5))
+```
+
+```{r fig.width=6, fig.height=4, out.width='50%', ref.label="Beta(2.11,0.39)",eval=FALSE}
+# First plot
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 2.11, shape2 = 0.39),
+    mapping = aes(color = "prior")
+  ) +
+  labs(title = "Figure 3.1 Prior Distribution")
+
+# Second plot
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 2.11, shape2 = 0.39),
+    mapping = aes(color = "prior")
+  ) +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 8 + 2.11, shape2 = 162 + 0.39),
+    mapping = aes(color = "posterior")
+  ) +
+  scale_color_manual(name = "dist", values = c("blue", "red")) +
+  labs(
+    title = "Figure 3.2 Prior and Posterior Distribution",
+    y = "PDF"
+  )
+
+```
+
+-Beta(1,1)
+```{r fig.width=6, fig.height=4, out.width='50%',ref.label="Beta(1,1)",eval=FALSE, echo=TRUE}
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 1, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  labs(title = "Figure 3.3 Beta(1,1) prior for BNT162b2")
+
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 1, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 8 + 1, shape2 = 162 + 1),
+    mapping = aes(color = "posterior")
+  ) +
+  scale_color_manual(name = "dist", values = c("blue", "red")) +
+  labs(
+    title = "Figure 3.4 Beta(1,1) Prior and Posterior Distribution",
+    y = "PDF"
+  )
+
+```
+
+-Beta(0.700102,1)
+
+```{r fig.width=6, fig.height=4, out.width='50%',ref.label="Beta(0.700102,1)",eval=FALSE}
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 0.700102, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  labs(title = "Figure 3.5 Beta(0.700102,1) prior for BNT162b2")
+
+ggplot() +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 0.700102, shape2 = 1),
+    mapping = aes(color = "prior")
+  ) +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = 8 + 0.700102, shape2 = 162 + 1),
+    mapping = aes(color = "posterior")
+  ) +
+  scale_color_manual(name = "dist", values = c("blue", "red")) +
+  labs(
+    title = "Figure 3.6 Prior and Posterior Distrbution (Beta(0.700102,1))",
+    y = "PDF"
+  )
+
+```
+
+## result
+### Beysian Inference
+-Beta(2.11,0.39)
+```{r ref.label="PosteriorMedian1", eval=FALSE}
+posterior_median_pi_2.11 <- qbeta(0.5,shape1 =2.11+ 8,shape2= 162+ 0.39 )
+```
+
+```{r ref.label="PosteriorEqualTailInterval1", eval=FALSE}
+eqtail_interval_2.11<-qbeta(p =c(0.025,0.975),shape1=2.11+8,shape2 =162 + 0.39)
+```
+
+```{r ref.label="PosteriorHPDI1", eval=FALSE}
+library(HDInterval)
+hpd_interval_2.11<-hdi(qbeta,credMass=0.95,shape1 =2.11 + 8,
+shape2=162 + 0.39)
+```
+
+```{r ref.label="P-value1", eval=FALSE}
+posterior_10.11<-pbeta(q=7/17,shape1=2.11+8,shape2 =162 + 0.39,lower.tail = FALSE)
+```
+
+-Beta(1,1)
+```{r ref.label="PosteriorMedian2", eval=FALSE}
+posterior_median_pi <- qbeta(0.5, shape1 = 9, shape2 = 163)
+```
+
+```{r ref.label="PosteriorEqualTailInterval2", eval=FALSE}
+eqtail_interval_1 <- qbeta(c(0.025, 0.975), shape1 = 9, shape2 = 163)
+```
+
+```{r ref.label="PosteriorHPDI2", eval=FALSE}
+library(HDInterval)
+hpd_interval_1 <- hdi(qbeta, credMass = 0.95, shape1 = 9, shape2 = 163)
+```
+
+```{r ref.label="P-value2",eval=FALSE}
+posterior_9<-pbeta(q=7/17,shape1=1+8,shape2 =162 + 1,lower.tail = FALSE)
+```
+
+
+Beta(0.700102,1)
+```{r ref.label="PosteriorMedian3",eval=FALSE}
+posterior_median_pi_0.700102 <- qbeta(0.5, shape1 = 8.700102, shape2 = 163)
+```
+
+```{r ref.label="PosteriorEqualTailInterval3",eval=FALSE}
+eqtail_interval_0.700102 <- qbeta(c(0.025, 0.975), shape1 = 8.700102, shape2 = 163)
+```
+
+```{r ref.label="PosteriorHPDI3",eval=FALSE}
+library(HDInterval)
+hpd_interval_0.700102 <- hdi(qbeta, credMass = 0.95, shape1 = 8.700102, shape2 = 163)
+print(hpd_interval_0.700102)
+```
+
+```{r ref.label="P-value3",eval=FALSE}
+posterior_8.700102<-pbeta(q=7/17,shape1=0.70012+8,shape2 =162 + 1, lower.tail = FALSE)
+```
+
+## Proofs
+\textbf{Proof 1.1 Log-likelihood derivation}
+$L^*(\psi) = \binom{n}{T}\left(\frac{\psi - 1}{\psi - 2}\right)^{T}\left(\frac{1}{\,2- \psi\,}\right)^{\,n - T}=\binom{n}{T}\frac{(\psi - 1)^{T}}{(\psi - 2)^{T}}\frac{1}{(\,2 - \psi\,)^{\,n - T}}$
+
+$=\binom{n}{T}\frac{(\psi - 1)^{T}}{(\psi - 2)^{T}}\left(\frac{1}{(-1)^{n-T}(\psi-2)^{\,n - T}}\right)=\binom{n}{T}(-1)^{n-T}\frac{(\psi - 1)^{T}}{(\psi - 2)^{n}}\quad \text{where}\quad -\infty<\psi<1$
+
+\textbf{Proof 1.2 Finding Candidates of $\hat{\psi}^{mle}$}
+\begin{align*}
+\frac{d}{d\psi} \ell^*(\psi) = \frac{t}{\psi - 1} - \frac{n}{\psi - 2} &= 0 \\
+\frac{t}{\psi - 1} &= \frac{n}{\psi - 2} \\
+T \psi - 2T &= n \psi - n\\
+\hat{\psi}_0^{mle} &= \frac{2T - n}{T - n}
+\end{align*}
+
+\textbf{Proof 1.3 Second Derivative of Log-likelihood Function of $\hat{\psi}_0^{mle}$}
+$$
+\frac{d^2}{d\psi^2} \ell^*(\psi) = -\frac{T}{(\psi - 1)^2} + \frac{n}{(\psi - 2)^2}
+$$
+Simplify the denominators:
+$$
+\frac{2T - n}{T - n} - 1 = \frac{T - n}{T - n} = 1
+$$
+$$
+\frac{2T - n}{T - n} - 2 = \frac{2T - n - 2(T - n)}{T - n} = \frac{2T - n - 2T + 2n}{T - n} = \frac{n}{T - n}
+$$
+Thus, the second derivative simplifies to:
+$\ell''(\hat{\psi}_0^{mle}) = -\frac{T}{1^2} + \frac{n}{\left( \frac{n}{T - n} \right)^2}= -T + \frac{n(T - n)^2}{n^2}= -T + \frac{(T - n)^2}{n}$
+Since $\frac{(T - n)^2}{n}$ is always positive, and $-T$ is negative, the overall second derivative is negative.
+
+\textbf{Proof 1.4 Second derivative of $\ell^*(\hat{\psi}_0^{mle})$}
+$$
+\frac{d^2}{d\psi^2} \ell^*(\hat{\psi}_0^{mle}) = \frac{n}{(\hat{\psi}_0^{mle} - 2)^2}-\frac{t}{(\hat{\psi}_0^{mle} - 1)^2}
+$$
+Substituting $\hat{\psi}_0^{mle} = \frac{2t - n}{t - n}$ to $(\psi-2)^2$ and $(\psi-1)^2$, 
+$$
+\hat{\psi}_0^{mle} - 1
+= \frac{2t - n}{t - n} - 1
+= \frac{2t - n - (t - n)}{t - n}
+= \frac{t}{t - n}
+\;\;\;\implies\;\;\;
+(\hat{\psi}_0^{mle} - 1)^2
+= \frac{t^2}{(t - n)^2}
+$$
+$$
+\hat{\psi}_0^{mle} - 2
+= \frac{2t - n}{t - n} - 2
+= \frac{2t - n - 2(t - n)}{t - n}
+= \frac{n}{t - n}
+\;\;\;\implies\;\;\;
+(\hat{\psi}_0^{mle} - 2)^2
+= \frac{n^2}{(t - n)^2}
+$$
+Substituting the equation of $\hat{\psi}_0^{mle} - 1$ and $\hat{\psi}_0^{mle} - 2$ to the second derivative,
+$\frac{d^2}{d\psi^2} \ell^*(\hat{\psi}_0^{mle}) = \frac{(t-n)^2}{n} - \frac{(t-n)^2}{t} = (t-n)^2(\frac{1}{n}-\frac{1}{t}) = (t-n)^2(\frac{t-n}{nt}) = \frac{(t-n)^3}{nt}$
+
+\textbf{Proof 1.5 $I(\pi)$ Calculation}
+
+The Fisher Information for $\pi$ is $I(\pi) = -\,E_T \bigl[\tfrac{d^2}{d\pi^2}\,\ell(\pi)\bigr]$ 
+where $\frac{d^2}{d\pi^2}\,\ell(\pi)= -\frac{T}{\pi^2} - \frac{n - T}{(1 - \pi)^2}$.
+Hence substituting $\mathbb{E}[T] = n\pi$ to $I(\pi)$
+$$
+I(\pi) = E_T \bigl[\tfrac{T}{\pi^2} + \tfrac{n - T}{(1 - \pi)^2}\bigr] \\
+= \frac{1}{\pi^2}\,E[T] + \frac{1}{(1 - \pi)^2}\,E[n - T] \\
+= \frac{n\pi}{\pi^2} + \frac{n(1 - \pi)}{(1 - \pi)^2} \\
+= \frac{n}{\pi} + \frac{n}{1 - \pi} \\
+= \frac{n}{\pi(1 - \pi)}
+$$
+\textbf{Proof 1.6 Expected Value and Variance of $\psi$}
+
+Given that $\psi(\hat{\pi})$ is a smooth function, we have the first order Taylor expansion as $\psi(\hat{\pi}) \approx \psi(\pi) + \psi'(\pi)\,(\hat{\pi} - \pi)$.
+By taking the expectation of both sides and by linearity of expectation, we get $E[\psi(\hat{\pi})] \approx E[\psi(\pi) + \psi'(\pi)(\hat{\pi} - \pi)] \approx \psi(\pi) + \psi'(\pi)\bigl(E[\hat{\pi}] - \pi\bigr) = \psi(\pi) + \psi'(\pi)\bigl(\pi - \pi\bigr) = \psi(\pi)$
+By taking the variance of both sides, and by variance calculation, we get $\mathrm{Var}[\psi(\hat{\pi})] \approx \mathrm{Var}\bigl[\psi(\pi) + \psi'(\pi)(\hat{\pi} - \pi)\bigr] \approx [\psi'(\pi)]^2 \,\mathrm{Var}(\hat{\pi})$
